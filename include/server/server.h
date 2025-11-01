@@ -9,6 +9,6 @@ class Server {
 
     void initServer();
 
-}
+};
 
 #endif //SERVER_H
