@@ -32,10 +32,12 @@ BIN_DIR		:= bin
 # searches all files within the folder, the wildcard only says that there is something to input
 # use with $(call rwildcard,_directory_,_wildcardForFileEnding_)
 rwildcard = $(foreach d,$(wildcard $(1)/*), $(call rwildcard,$(d),$(2))) $(wildcard $(1)/$(2))
+
+COMMON_SRCS	:= $(call rwildcard,$(SRC_DIR)/common,*.cpp)
 # Source Files
-SERVER_SRCS	:= $(call rwildcard,$(SRC_DIR)/server,*.cpp)
+SERVER_SRCS	:= $(call rwildcard,$(SRC_DIR)/server,*.cpp) $(COMMON_SRCS)
 #myserver.cpp
-CLIENT_SRCS	:= $(call rwildcard,$(SRC_DIR)/client,*.cpp)
+CLIENT_SRCS	:= $(call rwildcard,$(SRC_DIR)/client,*.cpp) $(COMMON_SRCS)
 #myclient.cpp
 
 SERVER_OBJS	:= $(patsubst $(SRC_DIR)/%.cpp,$(OBJ_DIR)/%.o,$(SERVER_SRCS))
