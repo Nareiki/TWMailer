@@ -18,7 +18,7 @@ CXX		:=g++
 #           of object code produced by the compiler or that of libraries supplied with it.
 #           These are HP-UX specific flags.
 #############################################################################################
-CPPFLAGS := -Iinclude -Isrc -Iinclude/server -Iinclude/helpers
+CPPFLAGS := -Iinclude -Isrc -Iinclude/server -Iinclude/helpers -Iinclude/client
 CXXFLAGS	:= -g -Wall -Wextra -Werror -O -std=c++20 -MMD -MP
 LDFLAGS		:= -pthread
 
@@ -39,7 +39,7 @@ HELPER_SRCS := $(call rwildcard,$(SRC_DIR)/helpers,*.cpp)
 # Helpers
 SERVER_SRCS := $(call rwildcard,$(SRC_DIR)/server,*.cpp) $(HELPER_SRCS) $(COMMON_SRCS)
 #myserver.cpp
-CLIENT_SRCS	:= $(call rwildcard,$(SRC_DIR)/client,*.cpp) $(COMMON_SRCS)
+CLIENT_SRCS	:= $(call rwildcard,$(SRC_DIR)/client,*.cpp) $(HELPER_SRCS) $(COMMON_SRCS)
 #myclient.cpp
 
 SERVER_OBJS	:= $(patsubst $(SRC_DIR)/%.cpp,$(OBJ_DIR)/%.o,$(SERVER_SRCS))

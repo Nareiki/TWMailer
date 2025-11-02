@@ -129,10 +129,6 @@ void Server::run() {
 
     sockaddr_in cliaddress{};
     while (!abortRequested_.load(std::memory_order_relaxed)) {
-        if (create_socket_ == -1) {
-            // Listening socket was closed in the signal handler -> clean exit.
-            break;
-        }
 
         socklen_t addrlen = sizeof(cliaddress);
         std::cout << "Waiting for connection...\n";
