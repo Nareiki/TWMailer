@@ -33,13 +33,12 @@ BIN_DIR		:= bin
 # use with $(call rwildcard,_directory_,_wildcardForFileEnding_)
 rwildcard = $(foreach d,$(wildcard $(1)/*), $(call rwildcard,$(d),$(2))) $(wildcard $(1)/$(2))
 
-COMMON_SRCS	:= $(call rwildcard,$(SRC_DIR)/common,*.cpp)
 # Source Files
 HELPER_SRCS := $(call rwildcard,$(SRC_DIR)/helpers,*.cpp)
 # Helpers
-SERVER_SRCS := $(call rwildcard,$(SRC_DIR)/server,*.cpp) $(HELPER_SRCS) $(COMMON_SRCS)
+SERVER_SRCS := $(call rwildcard,$(SRC_DIR)/server,*.cpp) $(HELPER_SRCS)
 #myserver.cpp
-CLIENT_SRCS	:= $(call rwildcard,$(SRC_DIR)/client,*.cpp) $(HELPER_SRCS) $(COMMON_SRCS)
+CLIENT_SRCS	:= $(call rwildcard,$(SRC_DIR)/client,*.cpp) $(HELPER_SRCS)
 #myclient.cpp
 
 SERVER_OBJS	:= $(patsubst $(SRC_DIR)/%.cpp,$(OBJ_DIR)/%.o,$(SERVER_SRCS))
