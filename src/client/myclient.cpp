@@ -1,180 +1,188 @@
+// client.c
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <unistd.h>
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-
-///////////////////////////////////////////////////////////////////////////////
+#include <cstdlib>
+#include <cstdio>
+#include <cstring>
+#include <cerrno>
+#include <cctype>
+#include <sys/time.h>
+#include <sys/select.h>
 
 #define BUF 1024
 #define PORT 6543
 
-///////////////////////////////////////////////////////////////////////////////
+// sendet eine Zeile ohne NUL-Byte, fügt CRLF hinzu
+static int send_line(int sock, const char* s) {
+    size_t len = strlen(s);
+    ssize_t n = send(sock, s, len, 0);
+    if (n < 0) return -1;
+    n = send(sock, "\r\n", 2, 0);
+    if (n < 0) return -1;
+    return 0;
+}
+
+// liest bis '\n', trimmt optionales '\r', nullterminiert
+static int recv_line(int sock, char* buf, size_t cap) {
+    size_t used = 0;
+    while (used + 1 < cap) {
+        char c;
+        ssize_t n = recv(sock, &c, 1, 0);
+        if (n == 0) { // server hat geschlossen
+            if (used == 0) return 0; // EOF
+            break;
+        }
+        if (n < 0) {
+            if (errno == EINTR) continue;
+            return -1;
+        }
+        if (c == '\n') break;
+        buf[used++] = c;
+    }
+    if (used > 0 && buf[used - 1] == '\r') used--;
+    buf[used] = '\0';
+    return (int)used;
+}
+
+// trimmt \r\n am Ende der lokalen Eingabe
+static void trim_stdin_line(char* s) {
+    size_t len = strlen(s);
+    while (len > 0 && (s[len - 1] == '\n' || s[len - 1] == '\r')) s[--len] = '\0';
+    // rechts trimmen: Space/Tab
+    while (len > 0 && (s[len - 1] == ' ' || s[len - 1] == '\t')) s[--len] = '\0';
+    // links trimmen
+    size_t i = 0;
+    while (s[i] == ' ' || s[i] == '\t') i++;
+    if (i > 0) memmove(s, s + i, len - i + 1);
+}
+
+static int equals_ignore_case(const char* a, const char* b) {
+    while (*a && *b) {
+        if (tolower((unsigned char)*a) != tolower((unsigned char)*b)) return 0;
+        ++a; ++b;
+    }
+    return *a == '\0' && *b == '\0';
+}
+
 
 int main(int argc, char **argv)
 {
-   int create_socket;
-   char buffer[BUF];
-   struct sockaddr_in address;
-   int size;
-   int isQuit;
+    int create_socket = -1;
+    struct sockaddr_in address;
+    char buffer[BUF];
 
-   ////////////////////////////////////////////////////////////////////////////
-   // CREATE A SOCKET
-   // https://man7.org/linux/man-pages/man2/socket.2.html
-   // https://man7.org/linux/man-pages/man7/ip.7.html
-   // https://man7.org/linux/man-pages/man7/tcp.7.html
-   // IPv4, TCP (connection oriented), IP (same as server)
-   if ((create_socket = socket(AF_INET, SOCK_STREAM, 0)) == -1)
-   {
-      perror("Socket error");
-      return EXIT_FAILURE;
-   }
+    // Socket
+    if ((create_socket = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
+        perror("socket");
+        return EXIT_FAILURE;
+    }
 
-   ////////////////////////////////////////////////////////////////////////////
-   // INIT ADDRESS
-   // Attention: network byte order => big endian
-   memset(&address, 0, sizeof(address)); // init storage with 0
-   address.sin_family = AF_INET;         // IPv4
-   // https://man7.org/linux/man-pages/man3/htons.3.html
-   address.sin_port = htons(PORT);
-   // https://man7.org/linux/man-pages/man3/inet_aton.3.html
-   if (argc < 2)
-   {
-      inet_aton("127.0.0.1", &address.sin_addr);
-   }
-   else
-   {
-      inet_aton(argv[1], &address.sin_addr);
-   }
+    // Address
+    memset(&address, 0, sizeof(address));
+    address.sin_family = AF_INET;
+    address.sin_port = htons(PORT);
+    if (argc < 2) inet_aton("127.0.0.1", &address.sin_addr);
+    else          inet_aton(argv[1], &address.sin_addr);
 
-   ////////////////////////////////////////////////////////////////////////////
-   // CREATE A CONNECTION
-   // https://man7.org/linux/man-pages/man2/connect.2.html
-   if (connect(create_socket,
-               (struct sockaddr *)&address,
-               sizeof(address)) == -1)
-   {
-      // https://man7.org/linux/man-pages/man3/perror.3.html
-      perror("Connect error - no server available");
-      return EXIT_FAILURE;
-   }
+    // Connect
+    if (connect(create_socket, (struct sockaddr*)&address, sizeof(address)) == -1) {
+        perror("connect");
+        close(create_socket);
+        return EXIT_FAILURE;
+    }
+    printf("Connected to %s:%d\n", inet_ntoa(address.sin_addr), PORT);
 
-   // ignore return value of printf
-   printf("Connection with server (%s) established\n",
-          inet_ntoa(address.sin_addr));
+    // Welcome (2 Zeilen vom Server sind üblich; wir lesen, solange schnell was kommt)
+    // Mindestens eine Zeile lesen:
+    int r = recv_line(create_socket, buffer, BUF);
+    if (r > 0) printf("%s\n", buffer);
+    // Versuche noch eine zweite Zeile zu lesen (optional):
+    // Nicht blockierend: nur wenn schon was da ist. Wir lassen es simpel und lesen noch einmal,
+    // falls der Server bereits beide Zeilen geschickt hat.
+    struct timeval tv = {0, 100000}; // 100 ms
+    fd_set rfds; FD_ZERO(&rfds); FD_SET(create_socket, &rfds);
+    if (select(create_socket + 1, &rfds, NULL, NULL, &tv) > 0) {
+        r = recv_line(create_socket, buffer, BUF);
+        if (r > 0) printf("%s\n", buffer);
+    }
 
-   ////////////////////////////////////////////////////////////////////////////
-   // RECEIVE DATA
-   // https://man7.org/linux/man-pages/man2/recv.2.html
-   size = recv(create_socket, buffer, BUF - 1, 0);
-   if (size == -1)
-   {
-      perror("recv error");
-   }
-   else if (size == 0)
-   {
-      printf("Server closed remote socket\n"); // ignore error
-   }
-   else
-   {
-      buffer[size] = '\0';
-      printf("%s", buffer); // ignore error
-   }
+    int isQuit = 0;
 
-   do
-   {
-      printf(">> ");
-      if (fgets(buffer, BUF - 1, stdin) != NULL)
-      {
-         int size = strlen(buffer);
-         // remove new-line signs from string at the end
-         if (buffer[size - 2] == '\r' && buffer[size - 1] == '\n')
-         {
-            size -= 2;
-            buffer[size] = 0;
-         }
-         else if (buffer[size - 1] == '\n')
-         {
-            --size;
-            buffer[size] = 0;
-         }
-         isQuit = strcmp(buffer, "quit") == 0;
+    while (!isQuit) {
+        printf(">> ");
+        fflush(stdout);
+        if (!fgets(buffer, BUF, stdin)) break;
+        trim_stdin_line(buffer);
 
-         //////////////////////////////////////////////////////////////////////
-         // SEND DATA
-         // https://man7.org/linux/man-pages/man2/send.2.html
-         // send will fail if connection is closed, but does not set
-         // the error of send, but still the count of bytes sent
-         if ((send(create_socket, buffer, size + 1, 0)) == -1) 
-         {
-            // in case the server is gone offline we will still not enter
-            // this part of code: see docs: https://linux.die.net/man/3/send
-            // >> Successful completion of a call to send() does not guarantee 
-            // >> delivery of the message. A return value of -1 indicates only 
-            // >> locally-detected errors.
-            // ... but
-            // to check the connection before send is sense-less because
-            // after checking the communication can fail (so we would need
-            // to have 1 atomic operation to check...)
-            perror("send error");
+        // leere Eingabe ignorieren
+        if (buffer[0] == '\0') continue;
+
+        // QUIT erkennung vor dem Senden (wir senden ihn aber trotzdem korrekt als Kommando)
+        isQuit = equals_ignore_case(buffer, "quit");
+
+        // 1) Kommando als Zeile senden (ohne NUL, mit CRLF)
+        if (send_line(create_socket, buffer) == -1) {
+            perror("send");
             break;
-         }
+        }
 
-         //////////////////////////////////////////////////////////////////////
-         // RECEIVE FEEDBACK
-         // consider: reconnect handling might be appropriate in somes cases
-         //           How can we determine that the command sent was received 
-         //           or not? 
-         //           - Resend, might change state too often. 
-         //           - Else a command might have been lost.
-         //
-         // solution 1: adding meta-data (unique command id) and check on the
-         //             server if already processed.
-         // solution 2: add an infrastructure component for messaging (broker)
-         //
-         size = recv(create_socket, buffer, BUF - 1, 0);
-         if (size == -1)
-         {
-            perror("recv error");
-            break;
-         }
-         else if (size == 0)
-         {
-            printf("Server closed remote socket\n"); // ignore error
-            break;
-         }
-         else
-         {
-            buffer[size] = '\0';
-            printf("<< %s\n", buffer); // ignore error
-            if (strcmp("OK", buffer) != 0)
-            {
-               fprintf(stderr, "<< Server error occured, abort\n");
-               break;
+        // 2) Wenn SEND: Header + Body nachschicken
+        if (strcmp(buffer, "SEND") == 0) {
+            // sender
+            printf("sender: "); fflush(stdout);
+            if (!fgets(buffer, BUF, stdin)) break;
+            trim_stdin_line(buffer);
+            if (send_line(create_socket, buffer) == -1) { perror("send"); break; }
+
+            // receiver
+            printf("receiver: "); fflush(stdout);
+            if (!fgets(buffer, BUF, stdin)) break;
+            trim_stdin_line(buffer);
+            if (send_line(create_socket, buffer) == -1) { perror("send"); break; }
+
+            // subject
+            printf("subject: "); fflush(stdout);
+            if (!fgets(buffer, BUF, stdin)) break;
+            trim_stdin_line(buffer);
+            if (send_line(create_socket, buffer) == -1) { perror("send"); break; }
+
+            // body
+            printf("message ('.' alleine beendet):\n");
+            for (;;) {
+                if (!fgets(buffer, BUF, stdin)) { perror("stdin"); break; }
+                trim_stdin_line(buffer);
+                if (strcmp(buffer, ".") == 0) {
+                    if (send_line(create_socket, ".") == -1) { perror("send"); }
+                    break;
+                }
+                if (send_line(create_socket, buffer) == -1) { perror("send"); break; }
             }
-         }
-      }
-   } while (!isQuit);
+        }
 
-   ////////////////////////////////////////////////////////////////////////////
-   // CLOSES THE DESCRIPTOR
-   if (create_socket != -1)
-   {
-      if (shutdown(create_socket, SHUT_RDWR) == -1)
-      {
-         // invalid in case the server is gone already
-         perror("shutdown create_socket"); 
-      }
-      if (close(create_socket) == -1)
-      {
-         perror("close create_socket");
-      }
-      create_socket = -1;
-   }
+        // 3) Server-Antwort (eine Zeile) lesen
+        r = recv_line(create_socket, buffer, BUF);
+        if (r <= 0) {
+            if (r < 0) perror("recv");
+            else fprintf(stderr, "Server closed connection\n");
+            break;
+        }
+        printf("<< %s\n", buffer);
 
-   return EXIT_SUCCESS;
+        // Für einfache Kommandos erwarten wir "OK" oder "ERR"
+        if (!equals_ignore_case(buffer, "OK")) {
+            fprintf(stderr, "<< Server error occurred, abort\n");
+            break;
+        }
+    }
+
+    // Close
+    if (create_socket != -1) {
+        shutdown(create_socket, SHUT_RDWR);
+        close(create_socket);
+        create_socket = -1;
+    }
+    return EXIT_SUCCESS;
 }
