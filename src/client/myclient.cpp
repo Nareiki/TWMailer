@@ -9,180 +9,243 @@
 #include <cstring>
 #include <cerrno>
 #include <cctype>
+#include <string>
+#include <iostream>
+#include <vector>
+#include <sstream>
 #include <sys/time.h>
 #include <sys/select.h>
+
 
 #define BUF 1024
 #define PORT 6543
 
-// sendet eine Zeile ohne NUL-Byte, fügt CRLF hinzu
-static int send_line(int sock, const char* s) {
-    size_t len = strlen(s);
-    ssize_t n = send(sock, s, len, 0);
+static int send_line(int sock, const std::string& s) {
+    ssize_t n = send(sock, s.c_str(), s.size(), 0);
     if (n < 0) return -1;
     n = send(sock, "\r\n", 2, 0);
     if (n < 0) return -1;
     return 0;
 }
 
-// liest bis '\n', trimmt optionales '\r', nullterminiert
-static int recv_line(int sock, char* buf, size_t cap) {
-    size_t used = 0;
-    while (used + 1 < cap) {
-        char c;
+static int recv_line(int sock, std::string& out) {
+    out.clear();
+    char c;
+    for (;;) {
         ssize_t n = recv(sock, &c, 1, 0);
-        if (n == 0) { // server hat geschlossen
-            if (used == 0) return 0; // EOF
-            break;
-        }
+        if (n == 0) return 0;
         if (n < 0) {
             if (errno == EINTR) continue;
             return -1;
         }
         if (c == '\n') break;
-        buf[used++] = c;
+        if (c != '\r') out.push_back(c);
     }
-    if (used > 0 && buf[used - 1] == '\r') used--;
-    buf[used] = '\0';
-    return (int)used;
+    return 1;
 }
 
-// trimmt \r\n am Ende der lokalen Eingabe
-static void trim_stdin_line(char* s) {
-    size_t len = strlen(s);
-    while (len > 0 && (s[len - 1] == '\n' || s[len - 1] == '\r')) s[--len] = '\0';
-    // rechts trimmen: Space/Tab
-    while (len > 0 && (s[len - 1] == ' ' || s[len - 1] == '\t')) s[--len] = '\0';
-    // links trimmen
-    size_t i = 0;
-    while (s[i] == ' ' || s[i] == '\t') i++;
-    if (i > 0) memmove(s, s + i, len - i + 1);
+static void trim_line(std::string& s) {
+    size_t a = 0, b = s.size();
+    while (b && (s[b-1] == '\n' || s[b-1] == '\r' || s[b-1] == ' ' || s[b-1] == '\t')) --b;
+    while (a < b && (s[a] == ' ' || s[a] == '\t')) ++a;
+    if (a || b != s.size()) s = s.substr(a, b - a);
 }
 
-static int equals_ignore_case(const char* a, const char* b) {
-    while (*a && *b) {
-        if (tolower((unsigned char)*a) != tolower((unsigned char)*b)) return 0;
-        ++a; ++b;
+static bool iequal(const std::string& a, const std::string& b) {
+    if (a.size() != b.size()) return false;
+    for (size_t i = 0; i < a.size(); ++i) {
+        if (std::tolower((unsigned char)a[i]) != std::tolower((unsigned char)b[i])) return false;
     }
-    return *a == '\0' && *b == '\0';
+    return true;
 }
 
-
-int main(int argc, char **argv)
-{
-    int create_socket = -1;
-    struct sockaddr_in address;
-    char buffer[BUF];
-
-    // Socket
-    if ((create_socket = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
-        perror("socket");
-        return EXIT_FAILURE;
+static bool starts_with_icase(const std::string& s, const std::string& p) {
+    if (s.size() < p.size()) return false;
+    for (size_t i = 0; i < p.size(); ++i) {
+        if (std::tolower((unsigned char)s[i]) != std::tolower((unsigned char)p[i])) return false;
     }
+    return true;
+}
 
-    // Address
-    memset(&address, 0, sizeof(address));
-    address.sin_family = AF_INET;
-    address.sin_port = htons(PORT);
-    if (argc < 2) inet_aton("127.0.0.1", &address.sin_addr);
-    else          inet_aton(argv[1], &address.sin_addr);
+static bool wait_readable(int fd, int timeout_ms) {
+    fd_set rfds; FD_ZERO(&rfds); FD_SET(fd, &rfds);
+    struct timeval tv;
+    tv.tv_sec = timeout_ms / 1000;
+    tv.tv_usec = (timeout_ms % 1000) * 1000;
+    int r = select(fd + 1, &rfds, NULL, NULL, &tv);
+    return r > 0 && FD_ISSET(fd, &rfds);
+}
 
-    // Connect
-    if (connect(create_socket, (struct sockaddr*)&address, sizeof(address)) == -1) {
-        perror("connect");
-        close(create_socket);
-        return EXIT_FAILURE;
-    }
-    printf("Connected to %s:%d\n", inet_ntoa(address.sin_addr), PORT);
+int main(int argc, char** argv) {
+    const char* host = (argc > 1) ? argv[1] : "127.0.0.1";
+    int port = (argc > 2) ? std::atoi(argv[2]) : 6543;
 
-    // Welcome (2 Zeilen vom Server sind üblich; wir lesen, solange schnell was kommt)
-    // Mindestens eine Zeile lesen:
-    int r = recv_line(create_socket, buffer, BUF);
-    if (r > 0) printf("%s\n", buffer);
-    // Versuche noch eine zweite Zeile zu lesen (optional):
-    // Nicht blockierend: nur wenn schon was da ist. Wir lassen es simpel und lesen noch einmal,
-    // falls der Server bereits beide Zeilen geschickt hat.
-    struct timeval tv = {0, 100000}; // 100 ms
-    fd_set rfds; FD_ZERO(&rfds); FD_SET(create_socket, &rfds);
-    if (select(create_socket + 1, &rfds, NULL, NULL, &tv) > 0) {
-        r = recv_line(create_socket, buffer, BUF);
-        if (r > 0) printf("%s\n", buffer);
-    }
+    int sock = socket(AF_INET, SOCK_STREAM, 0);
+    if (sock == -1) { perror("socket"); return EXIT_FAILURE; }
 
-    int isQuit = 0;
+    sockaddr_in addr{}; addr.sin_family = AF_INET; addr.sin_port = htons((uint16_t)port);
+    if (!inet_aton(host, &addr.sin_addr)) { fprintf(stderr, "bad host\n"); close(sock); return EXIT_FAILURE; }
 
-    while (!isQuit) {
-        printf(">> ");
-        fflush(stdout);
-        if (!fgets(buffer, BUF, stdin)) break;
-        trim_stdin_line(buffer);
+    if (connect(sock, (sockaddr*)&addr, sizeof(addr)) == -1) { perror("connect"); close(sock); return EXIT_FAILURE; }
 
-        // leere Eingabe ignorieren
-        if (buffer[0] == '\0') continue;
+    std::string line;
+    if (recv_line(sock, line) > 0) std::cout << line << "\n";
+    if (wait_readable(sock, 100)) if (recv_line(sock, line) > 0) std::cout << line << "\n";
 
-        // QUIT erkennung vor dem Senden (wir senden ihn aber trotzdem korrekt als Kommando)
-        isQuit = equals_ignore_case(buffer, "quit");
+    for (;;) {
+        std::cout << ">> ";
+        std::cout.flush();
+        if (!std::getline(std::cin, line)) break;
+        trim_line(line);
+        if (line.empty()) continue;
 
-        // 1) Kommando als Zeile senden (ohne NUL, mit CRLF)
-        if (send_line(create_socket, buffer) == -1) {
-            perror("send");
+        if (send_line(sock, line) == -1) { perror("send"); break; }
+
+        if (iequal(line, "QUIT")) {
+            std::string resp;
+            int r = recv_line(sock, resp);
+            if (r <= 0) break;
+            std::cout << "<< " << resp << "\n";
             break;
         }
 
-        // 2) Wenn SEND: Header + Body nachschicken
-        if (strcmp(buffer, "SEND") == 0) {
-            // sender
-            printf("sender: "); fflush(stdout);
-            if (!fgets(buffer, BUF, stdin)) break;
-            trim_stdin_line(buffer);
-            if (send_line(create_socket, buffer) == -1) { perror("send"); break; }
-
-            // receiver
-            printf("receiver: "); fflush(stdout);
-            if (!fgets(buffer, BUF, stdin)) break;
-            trim_stdin_line(buffer);
-            if (send_line(create_socket, buffer) == -1) { perror("send"); break; }
-
-            // subject
-            printf("subject: "); fflush(stdout);
-            if (!fgets(buffer, BUF, stdin)) break;
-            trim_stdin_line(buffer);
-            if (send_line(create_socket, buffer) == -1) { perror("send"); break; }
-
-            // body
-            printf("message ('.' alleine beendet):\n");
-            for (;;) {
-                if (!fgets(buffer, BUF, stdin)) { perror("stdin"); break; }
-                trim_stdin_line(buffer);
-                if (strcmp(buffer, ".") == 0) {
-                    if (send_line(create_socket, ".") == -1) { perror("send"); }
-                    break;
-                }
-                if (send_line(create_socket, buffer) == -1) { perror("send"); break; }
+        if (iequal(line, "SEND")) {
+            std::string s;
+            std::cout << "sender: "; std::cout.flush();
+            if (!std::getline(std::cin, s)) {
+                break;
             }
+            trim_line(s);
+
+            if (send_line(sock, s) == -1) { perror("send"); break; }
+
+            std::cout << "receiver: "; std::cout.flush();
+            if (!std::getline(std::cin, s)) {
+                break;
+            }
+            trim_line(s);
+
+            if (send_line(sock, s) == -1) { perror("send"); break; }
+
+            std::cout << "subject: "; std::cout.flush();
+            if (!std::getline(std::cin, s)) {
+                break;
+            }
+            trim_line(s);
+
+            if (send_line(sock, s) == -1) { perror("send"); break; }
+
+            std::cout << "message ('.' to end):\n";
+            for (;;) {
+                if (!std::getline(std::cin, s)) { perror("stdin"); break; }
+                trim_line(s);
+                if (s == ".") { if (send_line(sock, ".") == -1) { perror("send"); } break; }
+                if (send_line(sock, s) == -1) { perror("send"); break; }
+            }
+
+            std::string resp;
+            int r = recv_line(sock, resp);
+            if (r <= 0) { if (r < 0) perror("recv"); else std::cerr << "closed\n"; break; }
+            std::cout << "<< " << resp << "\n";
+            if (!iequal(resp, "OK")) { std::cerr << "<< Server error\n"; continue; }
+            continue;
         }
 
-        // 3) Server-Antwort (eine Zeile) lesen
-        r = recv_line(create_socket, buffer, BUF);
-        if (r <= 0) {
-            if (r < 0) perror("recv");
-            else fprintf(stderr, "Server closed connection\n");
-            break;
+        if (starts_with_icase(line, "LIST")) {
+            std::string user;
+            if (!std::getline(std::cin, user) || user.size() == 0) {}
         }
-        printf("<< %s\n", buffer);
 
-        // Für einfache Kommandos erwarten wir "OK" oder "ERR"
-        if (!equals_ignore_case(buffer, "OK")) {
-            fprintf(stderr, "<< Server error occurred, abort\n");
-            break;
+        if (iequal(line, "LIST")) {
+            std::string user;
+            std::cout << "user: "; std::cout.flush();
+            if (!std::getline(std::cin, user)) {
+                break;
+            }
+            trim_line(user);
+
+            if (send_line(sock, user) == -1) { perror("send"); break; }
+
+            std::string countLine;
+            int r = recv_line(sock, countLine);
+            if (r <= 0) { if (r < 0) perror("recv"); else std::cerr << "closed\n"; break; }
+            std::cout << "<< " << countLine << "\n";
+            long n = std::strtol(countLine.c_str(), nullptr, 10);
+            if (n < 0) n = 0;
+            for (long i = 0; i < n; ++i) {
+                std::string subj;
+                r = recv_line(sock, subj);
+                if (r <= 0) break;
+                std::cout << i+1 << ": " << subj << "\n";
+            }
+            continue;
         }
+
+        if (iequal(line, "READ")) {
+            std::string user, id;
+            std::cout << "user: "; std::cout.flush();
+            if (!std::getline(std::cin, user)) {
+                break;
+            }
+            trim_line(user);
+            if (send_line(sock, user) == -1) { perror("send"); break; }
+            std::cout << "id: "; std::cout.flush();
+            if (!std::getline(std::cin, id)) {
+                break;
+            }
+            trim_line(id);
+            if (send_line(sock, id) == -1) { perror("send"); break; }
+
+            std::string status;
+            int r = recv_line(sock, status);
+            if (r <= 0) { if (r < 0) perror("recv"); else std::cerr << "closed\n"; break; }
+            std::cout << "<< " << status << "\n";
+            if (!iequal(status, "OK")) { std::cerr << "<< Server error\n"; continue; }
+
+            std::string chunk, all;
+            for (;;) {
+                if (!wait_readable(sock, 150)) break;
+                char buf[4096];
+                ssize_t n = recv(sock, buf, sizeof(buf), 0);
+                if (n <= 0) break;
+                all.append(buf, buf + n);
+                if (n < (ssize_t)sizeof(buf)) {
+                    if (!wait_readable(sock, 50)) break;
+                }
+            }
+            if (!all.empty() && all.back() != '\n') all.push_back('\n');
+            std::cout << all;
+            continue;
+        }
+
+        if (iequal(line, "DEL")) {
+            std::string user, id;
+            std::cout << "user: "; std::cout.flush();
+            if (!std::getline(std::cin, user)) {
+                break;
+            }
+            trim_line(user);
+            if (send_line(sock, user) == -1) { perror("send"); break; }
+            std::cout << "id: "; std::cout.flush();
+            if (!std::getline(std::cin, id)) {
+                break;
+            }
+            trim_line(id);
+            if (send_line(sock, id) == -1) { perror("send"); break; }
+
+            std::string resp;
+            int r = recv_line(sock, resp);
+            if (r <= 0) { if (r < 0) perror("recv"); else std::cerr << "closed\n"; break; }
+            std::cout << "<< " << resp << "\n";
+            continue;
+        }
+
+        std::string resp;
+        int r = recv_line(sock, resp);
+        if (r <= 0) { if (r < 0) perror("recv"); else std::cerr << "closed\n"; break; }
+        std::cout << "<< " << resp << "\n";
     }
 
-    // Close
-    if (create_socket != -1) {
-        shutdown(create_socket, SHUT_RDWR);
-        close(create_socket);
-        create_socket = -1;
-    }
+    if (sock != -1) { shutdown(sock, SHUT_RDWR); close(sock); sock = -1; }
     return EXIT_SUCCESS;
 }

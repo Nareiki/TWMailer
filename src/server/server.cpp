@@ -238,6 +238,27 @@ void Server::clientCommunication(int clientSocket) {
             continue;
         }
 
+        if (command == "LIST") {
+            if (!handle_list(clientSocket)) {
+                std::cerr << "LIST failed\n";
+            }
+            continue;
+        }
+
+        if (command == "READ") {
+            if (!handle_read(clientSocket)) {
+                std::cerr << "READ failed\n";
+            }
+            continue;
+        }
+
+        if (command == "DEL") {
+            if (!handle_del(clientSocket)) {
+                std::cerr << "DEL failed\n";
+            }
+            continue;
+        }
+
         if (command == "QUIT" || command == "quit") {
             break;
         }

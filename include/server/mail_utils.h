@@ -9,5 +9,8 @@
 #include <string>
 
 bool handle_send(int clientSocket);
+bool handle_list(int clientSocket);
+bool handle_read(int clientSocket);
+bool handle_del (int clientSocket);
 
 #endif //TWMAILER_MAIL_UTILS_H
