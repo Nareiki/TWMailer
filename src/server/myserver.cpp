@@ -20,9 +20,6 @@ int main(int argc, char* argv[]) {
         return result;
     }
 
-    std::cout << port << std::endl;
-    std::cout << path << std::endl;
-
     Server server(port);
     server.run();
     return 0;

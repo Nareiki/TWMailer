@@ -18,7 +18,6 @@ bool parse_port(const std::string &s, unsigned int &out_port) {
 
     unsigned long val = std::strtoul(s.c_str(), &end, 10);
 
-    std::cout << s.c_str() << " " << end << std::endl;
     if (end == s.c_str() || *end != '\0')
         return false;
 
