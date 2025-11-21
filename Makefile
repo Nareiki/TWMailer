@@ -18,11 +18,9 @@ CXX		:=g++
 #           of object code produced by the compiler or that of libraries supplied with it.
 #           These are HP-UX specific flags.
 #############################################################################################
-CPPFLAGS := -Iinclude -Isrc -Iinclude/server -Iinclude/helpers -Iinclude/client
+CPPFLAGS := -Iinclude -Isrc -Iinclude/server -Iinclude/helpers -Iinclude/client -Iinclude/ldap
 CXXFLAGS	:= -g -Wall -Wextra -Werror -O -std=c++20 -MMD -MP
-LDFLAGS		:= -pthread
-
-
+LDFLAGS		:= -pthread -lldap -llber
 
 # Folders
 SRC_DIR		:= src
@@ -46,6 +44,10 @@ SERVER_OBJS	:= $(patsubst $(SRC_DIR)/%.cpp,$(OBJ_DIR)/%.o,$(SERVER_SRCS))
 CLIENT_OBJS	:= $(patsubst $(SRC_DIR)/%.cpp,$(OBJ_DIR)/%.o,$(CLIENT_SRCS))
 #$(CLIENT_SRCS:%.cpp=$(OBJ_DIR)/%.o)
 
+LDAP_SRCS	:= $(call rwildcard,$(SRC_DIR)/ldap,*.cpp) $(HELPER_SRCS)
+
+LDAP_OBJS	:= $(patsubst $(SRC_DIR)/%.cpp,$(OBJ_DIR)/%.o,$(LDAP_SRCS))
+
 SERVER_DEPS	:= $(SERVER_OBJS:.o=.d)
 CLIENT_DEPS := $(CLIENT_OBJS:.o=.d)
 
@@ -55,6 +57,7 @@ all: ./$(BIN_DIR)/server ./$(BIN_DIR)/client
 
 server: ./$(BIN_DIR)/server
 client: ./$(BIN_DIR)/client
+ldap: ./$(BIN_DIR)/ldap
 
 rebuild:
 	$(MAKE) clean
@@ -79,6 +82,10 @@ $(BIN_DIR)/server: $(SERVER_OBJS)
 $(BIN_DIR)/client: $(CLIENT_OBJS)
 	@mkdir -p $(BIN_DIR)
 	$(CXX) $(CLIENT_OBJS) $(CXXFLAGS) $(LDFLAGS) -o $@
+
+$(BIN_DIR)/ldap: $(LDAP_SRCS)
+	@mkdir -p $(BIN_DIR)
+	$(CXX) $(LDAP_OBJS) $(CXXFLAGS) $(LDFLAGS) -o $@
 
 -include $(SERVER_DEPS) $(CLIENT_DEPS)
 
