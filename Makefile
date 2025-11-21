@@ -4,6 +4,15 @@
 # G++ is part of GCC (GNU compiler collection) and is a compiler best suited for C++
 CXX		:=g++
 
+# Folders
+SRC_DIR		:= src
+OBJ_DIR		:= obj
+BIN_DIR		:= bin
+
+# searches all files within the folder, the wildcard only says that there is something to input
+# use with $(call rwildcard,_directory_,_wildcardForFileEnding_)
+rwildcard = $(foreach d,$(wildcard $(1)/*), $(call rwildcard,$(d),$(2))) $(wildcard $(1)/$(2))
+
 # Compiler Flags: https://linux.die.net/man/1/g++
 #############################################################################################
 # -g: produces debugging information (for gdb)
@@ -18,18 +27,15 @@ CXX		:=g++
 #           of object code produced by the compiler or that of libraries supplied with it.
 #           These are HP-UX specific flags.
 #############################################################################################
-CPPFLAGS := -Iinclude -Isrc -Iinclude/server -Iinclude/helpers -Iinclude/client -Iinclude/ldap
+
 CXXFLAGS	:= -g -Wall -Wextra -Werror -O -std=c++20 -MMD -MP
 LDFLAGS		:= -pthread -lldap -llber
 
-# Folders
-SRC_DIR		:= src
-OBJ_DIR		:= obj
-BIN_DIR		:= bin
+HEADER_DIRS := $(sort $(dir $(call rwildcard,$(SRC_DIR),*.h)) $(dir $(call rwildcard,$(SRC_DIR),*.hpp)))
+INCLUDE_FLAGS := $(addprefix -I,$(HEADER_DIRS))
 
-# searches all files within the folder, the wildcard only says that there is something to input
-# use with $(call rwildcard,_directory_,_wildcardForFileEnding_)
-rwildcard = $(foreach d,$(wildcard $(1)/*), $(call rwildcard,$(d),$(2))) $(wildcard $(1)/$(2))
+CPPFLAGS := -Isrc $(INCLUDE_FLAGS)#-Iinclude -Isrc -Iinclude/server -Iinclude/helpers -Iinclude/client -Iinclude/ldap #-Iinclude/server/ldap
+#-Isrc $(INCLUDE_FLAGS)#
 
 # Source Files
 HELPER_SRCS := $(call rwildcard,$(SRC_DIR)/helpers,*.cpp)
