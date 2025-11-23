@@ -60,3 +60,22 @@ The project was built in incremental, test-driven stages:
 - Robustness improvements: added error handling for socket interruptions (`EINTR`) and invalid user/message inputs.
 - Consistency: standardized logging, function naming, and comment structure across all modules.
 - Testing tooling: upgraded the client to fully exercise all commands interactively, enabling complete end-to-end testing.
+
+## 4. Threading & Concurrency
+
+To improve scalability and support multiple clients simultaneously, the server was upgraded from a single-threaded model to a **multithreaded architecture** using a **thread pool**:
+
+### Thread Pool
+- Implemented a minimal fixed-size thread pool using `std::thread`, `std::mutex`, `std::condition_variable`.
+- Incoming client connections are assigned to worker threads that handle their complete session lifecycle.
+- This allows concurrent handling of client commands (`SEND`, `LIST`, etc.) without blocking the main accept loop.
+
+### Synchronization
+To avoid race conditions in file access (especially for the same user), we introduced a **user-level synchronization layer**:
+- `SyncManager` provides a per-user `std::mutex` via `get_user_mutex(username)`.
+- Each critical command handler (`SEND`, `LIST`, `READ`, `DEL`) acquires a lock on the user’s mailbox to ensure thread-safe access.
+- This ensures:
+  - Atomic `SEND` file creation.
+  - Consistent mailbox views during `LIST` and `READ`.
+  - Correct deletion semantics for `DEL`.
+
