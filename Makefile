@@ -7,6 +7,7 @@ CXX		:=g++
 
 
 # Folders
+INCL_DIR	:= include
 SRC_DIR		:= src
 OBJ_DIR		:= obj
 BIN_DIR		:= bin
@@ -33,10 +34,12 @@ rwildcard = $(foreach d,$(wildcard $(1)/*), $(call rwildcard,$(d),$(2))) $(wildc
 CXXFLAGS	:= -g -Wall -Wextra -Werror -O -std=c++20 -MMD -MP
 LDFLAGS		:= -pthread -lldap -llber
 
-HEADER_DIRS := $(sort $(dir $(call rwildcard,$(SRC_DIR),*.h)) $(dir $(call rwildcard,$(SRC_DIR),*.hpp)))
+HEADER_DIRS := $(sort $(dir $(call rwildcard,$(INCL_DIR),*.h)) $(dir $(call rwildcard,$(INCL_DIR),*.hpp)))
+$(info VAR is $(HEADER_DIRS))
 INCLUDE_FLAGS := $(addprefix -I,$(HEADER_DIRS))
+$(info VAR is $(INCLUDE_FLAGS))
 
-CPPFLAGS := -Isrc -Iinclude $(INCLUDE_FLAGS)#-Iinclude -Isrc -Iinclude/server -Iinclude/helpers -Iinclude/client -Iinclude/ldap #-Iinclude/server/ldap
+CPPFLAGS := -Isrc -Iinclude $(INCLUDE_FLAGS) #-Iinclude -Isrc -Iinclude/server -Iinclude/helpers -Iinclude/client -Iinclude/ldap #-Iinclude/server/ldap
 #-Isrc $(INCLUDE_FLAGS)#
 
 # Source Files
