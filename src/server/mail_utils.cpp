@@ -128,12 +128,11 @@ bool handle_login(int clientSocket, const std::string& clientIp, bool& authentic
  * @warning No concurrency control on id assignment—two concurrent SENDs to the same inbox may race.
  * @warning Message is stored verbatim; no size limit enforced here—upstream should guard against abuse.
  */
-bool handle_send(int clientSocket, std::string username) {
+bool handle_send(int clientSocket, const std::string& username) {
     // ----- Variables -----
     std::string receiver, subject, line, message;
 
     // ----- Read header lines (sender / receiver / subject) -----
-    if (!readLineFromSocket(clientSocket, username)) { return false; }
     if (!readLineFromSocket(clientSocket, receiver)) { return false; }
     if (!readLineFromSocket(clientSocket, subject)) { return false; }
 
@@ -313,7 +312,7 @@ bool handle_list(int clientSocket, const std::string& username) {
  *
  * @note Message id is interpreted as the numeric filename stem.
  */
-bool handle_read(int clientSocket, std::string username) {
+bool handle_read(int clientSocket, const std::string& username) {
     // ----- Read parameters -----
     std::string idStr;
     if (!readLineFromSocket(clientSocket, idStr))   { return false; }
@@ -382,7 +381,7 @@ bool handle_read(int clientSocket, std::string username) {
  *
  * @note Deletion uses std::filesystem::remove with error_code and reports ERR on failure.
  */
-bool handle_del(int clientSocket, std::string username) {
+bool handle_del(int clientSocket, const std::string& username) {
     // ----- Read parameters -----
     std::string idStr;
     if (!readLineFromSocket(clientSocket, idStr))   { return false; }
