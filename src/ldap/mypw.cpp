@@ -3,6 +3,15 @@
 #include <stdio.h>
 #include <iostream>
 
+/**
+ * @brief Reads a single character from stdin without waiting for ENTER.
+ *
+ * Temporarily disables canonical mode and echo using termios so that input
+ * becomes immediate and invisible. Restores the previous terminal settings
+ * before returning.
+ *
+ * @return The read character as an int.
+ */
 int getch()
 {
     int ch;
@@ -39,6 +48,14 @@ int getch()
     return ch;
 }
 
+/**
+ * @brief Reads a password from stdin without echoing characters.
+ *
+ * Uses raw terminal mode to suppress input echo. Supports backspace and
+ * returns the entered password once the user presses ENTER.
+ *
+ * @return The entered password as a std::string.
+ */
 std::string getpass()
 {
     int show_asterisk = 0;

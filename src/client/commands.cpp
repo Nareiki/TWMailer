@@ -56,6 +56,18 @@ void read_welcome(int sock) {
 
 // ====== LOGIN ===============================================================
 
+/**
+ * @brief Performs a LOGIN exchange with the server.
+ *
+ * Sends username and password (hidden via getpass()) to the server and waits
+ * for an authentication response. The server replies with "OK" on success or
+ * "ERR" on failure.
+ *
+ * @param sock Connected client socket.
+ * @return true if the server responded with "OK", false otherwise.
+ *
+ * @note Caller must have already sent the command "LOGIN".
+ */
 bool cmd_login(int sock)
 {
     std::string s;

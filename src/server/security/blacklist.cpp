@@ -20,13 +20,26 @@ static const int MAX_FAILS = 3;
 static const std::chrono::seconds BLOCK_DURATION(60);
 static std::string g_filename;
 
+
+/**
+ * @brief Converts a time_t to a system_clock::time_point.
+ */
 static std::chrono::system_clock::time_point tp_from_time_t(std::time_t t) {
     return std::chrono::system_clock::from_time_t(t);
 }
 
+/**
+ * @brief Converts a system_clock::time_point to time_t.
+ */
 static std::time_t time_t_from_tp(std::chrono::system_clock::time_point tp) {
     return std::chrono::system_clock::to_time_t(tp);
 }
+
+/**
+ * @brief Loads the blacklist file into memory.
+ *
+ * Skips invalid lines and removes already-expired entries.
+ */
 
 void load_blacklist(const std::string& filename) {
     g_filename = filename;
@@ -61,6 +74,9 @@ void load_blacklist(const std::string& filename) {
     }
 }
 
+/**
+ * @brief Writes all current blacklist entries to disk.
+ */
 void save_blacklist(const std::string& filename) {
     std::ofstream out(filename, std::ios::trunc);
     if (!out.is_open()) {
@@ -72,6 +88,13 @@ void save_blacklist(const std::string& filename) {
         out << ip << " " << until_ts << " " << entry.failCount << " " << entry.blocked << std::endl;
     }
 }
+
+/**
+ * @brief Checks if an IP is currently blocked.
+ *
+ * Automatically unblocks expired entries.
+ * @return true if IP is still blocked, false otherwise.
+ */
 
 bool is_ip_blocked(const std::string& ip) {
     auto it = g_blacklist.find(ip);
@@ -92,6 +115,12 @@ bool is_ip_blocked(const std::string& ip) {
     }
     return true;
 }
+
+/**
+ * @brief Records a failed login and applies blocking if limit exceeded.
+ *
+ * Resets old entries, increments fail counter, and sets 60s block.
+ */
 
 void register_failed_login(const std::string& ip) {
     auto& entry = g_blacklist[ip];
@@ -115,6 +144,9 @@ void register_failed_login(const std::string& ip) {
     save_blacklist(g_filename);
 }
 
+/**
+ * @brief Clears blacklist entry for an IP after a successful login.
+ */
 void register_successful_login(const std::string& ip) {
     auto it = g_blacklist.find(ip);
     if (it != g_blacklist.end()) {

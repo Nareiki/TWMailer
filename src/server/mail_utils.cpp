@@ -21,6 +21,47 @@
 
 namespace fs = std::filesystem;
 
+/**
+ * @brief Handles the LOGIN command for an authenticated mail server session.
+ *
+ * Protocol (expected from client):
+ *   1) First line already read by main loop: "LOGIN"
+ *   2) Second line: username (ASCII, no spaces)
+ *   3) Third line: password (plain text)
+ *
+ * Behavior:
+ *   - Validates input lines for non-emptiness.
+ *   - Checks if the client's IP address is currently blacklisted.
+ *   - Performs LDAP authentication using ldap_authenticate().
+ *   - Updates internal authentication state upon success.
+ *   - On failure increments the IP-based login attempt counter
+ *     via register_failed_login(), possibly triggering a temporary blacklist.
+ *
+ * Server responses:
+ *   - "OK\n"  on successful authentication.
+ *   - "ERR\n" on any error, including:
+ *        • malformed input
+ *        • empty username or password
+ *        • LDAP authentication failure
+ *        • blacklisted IP address
+ *        • socket I/O errors
+ *
+ * Effects:
+ *   - @p authenticated is set to true only on successful login.
+ *   - @p currentUser is assigned the authenticated username.
+ *   - Successful logins reset the failed-attempt counter via register_successful_login().
+ *
+ * @param clientSocket Connected client socket (blocking I/O expected).
+ * @param clientIp     IPv4 address of the connecting client in dotted notation.
+ * @param authenticated Reference to session authentication flag.
+ * @param currentUser   Reference to the session's authenticated username.
+ *
+ * @return true if authentication succeeded, false otherwise.
+ *
+ * @note This function always sends exactly one response line ("OK\n" or "ERR\n").
+ * @note Blacklisting logic persists state to disk through the blacklist manager.
+ * @warning Password is transmitted in plain text over the protocol; rely on network isolation per assignment constraints.
+ */
 bool handle_login(int clientSocket, const std::string& clientIp, bool& authenticated, std::string& currentUser) {
     if (is_ip_blocked(clientIp)) {
         const std::string msg = "ERR blacklisted\n";
