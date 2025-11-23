@@ -4,6 +4,8 @@
 # G++ is part of GCC (GNU compiler collection) and is a compiler best suited for C++
 CXX		:=g++
 
+
+
 # Folders
 SRC_DIR		:= src
 OBJ_DIR		:= obj
@@ -34,7 +36,7 @@ LDFLAGS		:= -pthread -lldap -llber
 HEADER_DIRS := $(sort $(dir $(call rwildcard,$(SRC_DIR),*.h)) $(dir $(call rwildcard,$(SRC_DIR),*.hpp)))
 INCLUDE_FLAGS := $(addprefix -I,$(HEADER_DIRS))
 
-CPPFLAGS := -Isrc $(INCLUDE_FLAGS)#-Iinclude -Isrc -Iinclude/server -Iinclude/helpers -Iinclude/client -Iinclude/ldap #-Iinclude/server/ldap
+CPPFLAGS := -Isrc -Iinclude $(INCLUDE_FLAGS)#-Iinclude -Isrc -Iinclude/server -Iinclude/helpers -Iinclude/client -Iinclude/ldap #-Iinclude/server/ldap
 #-Isrc $(INCLUDE_FLAGS)#
 
 # Source Files

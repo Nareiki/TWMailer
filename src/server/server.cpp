@@ -3,6 +3,7 @@
 //
 #include "server/server.h"
 #include "server/mail_utils.h"
+#include "helpers/threadPool.h"
 
 #include <iostream>
 #include <string>
@@ -11,13 +12,14 @@
 #include <csignal>
 #include <cstdlib>
 #include <cstdio>
+#include <thread>
 
 #include <unistd.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
-#include "readLineFromSocket.h"
+#include "helpers/readLineFromSocket.h"
 
 #define BUF 1024
 #define BACKLOG 5
@@ -58,7 +60,8 @@ Server::Server(int port)
     : port_(port),
       create_socket_(-1),
       new_socket_(-1),
-      abortRequested_(false)
+      abortRequested_(false),
+      threadPool_(std::thread::hardware_concurrency())
 {
     instance = this;
     std::signal(SIGINT, &Server::signalHandler);
@@ -133,8 +136,8 @@ void Server::run() {
         socklen_t addrlen = sizeof(cliaddress);
         std::cout << "Waiting for connection...\n";
 
-        new_socket_ = ::accept(create_socket_, reinterpret_cast<sockaddr*>(&cliaddress), &addrlen);
-        if (new_socket_ == -1) {
+        int clientSocket = ::accept(create_socket_, reinterpret_cast<sockaddr*>(&cliaddress), &addrlen);
+        if (clientSocket == -1) {
             if (abortRequested_.load(std::memory_order_relaxed)) {
                 std::cerr << "Accept interrupted due to SIGINT. Shutting down.\n";
                 break;
@@ -153,9 +156,11 @@ void Server::run() {
         std::cout << "Client connected from " << ::inet_ntoa(cliaddress.sin_addr)
                   << ":" << ntohs(cliaddress.sin_port) << "\n";
 
-        // Handle this client synchronously; returns when client disconnects or QUIT is received.
-        clientCommunication(new_socket_);
-        new_socket_ = -1;
+        // Handle clients in a thread pool; returns when client disconnects or QUIT is received.
+        threadPool_.enqueue([this, clientSocket]() {
+            clientCommunication(clientSocket);
+        });
+
     }
 
     shutdownServer();

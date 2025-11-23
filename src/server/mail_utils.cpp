@@ -5,6 +5,7 @@
 #include "server/mail_utils.h"
 #include "helpers/readLineFromSocket.h"
 #include "helpers/protocolValidation.h"
+#include "helpers/syncManager.h"
 
 #include <filesystem>
 #include <fstream>
@@ -49,6 +50,10 @@ bool handle_send(int clientSocket) {
     if (!readLineFromSocket(clientSocket, sender)) { return false; }
     if (!readLineFromSocket(clientSocket, receiver)) { return false; }
     if (!readLineFromSocket(clientSocket, subject)) { return false; }
+
+    // ----- Locks the receiver -----
+    std::mutex& mtx = SyncManager::get_user_mutex(receiver);
+    std::lock_guard<std::mutex> lock(mtx);
 
     // ----- Validate protocol fields -----
     if (!is_valid_username(sender)) {
@@ -136,6 +141,10 @@ bool handle_list(int clientSocket) {
     // ----- Read username -----
     std::string username;
     if (!readLineFromSocket(clientSocket, username)) { return false; }
+
+    // ----- Locks the user -----
+    std::mutex& mtx = SyncManager::get_user_mutex(username);
+    std::lock_guard<std::mutex> lock(mtx);
 
     // ----- Validate username -----
     if (!is_valid_username(username)) {
@@ -231,6 +240,10 @@ bool handle_read(int clientSocket) {
     if (!readLineFromSocket(clientSocket, username)) { return false; }
     if (!readLineFromSocket(clientSocket, idStr))   { return false; }
 
+    // ----- Locks the user -----
+    std::mutex& mtx = SyncManager::get_user_mutex(username);
+    std::lock_guard<std::mutex> lock(mtx);
+
     // ----- Validate -----
     if (!is_valid_username(username)) {
         send_err_line(clientSocket);
@@ -295,6 +308,10 @@ bool handle_del(int clientSocket) {
     std::string username, idStr;
     if (!readLineFromSocket(clientSocket, username)) { return false; }
     if (!readLineFromSocket(clientSocket, idStr))   { return false; }
+
+    // ----- Locks the user -----
+    std::mutex& mtx = SyncManager::get_user_mutex(username);
+    std::lock_guard<std::mutex> lock(mtx);
 
     // ----- Validate -----
     if (!is_valid_username(username)) {

@@ -6,6 +6,7 @@
 #define SERVER_H
 
 #include <atomic>
+#include "../helpers/threadPool.h"
 
 class Server {
 public:
@@ -23,7 +24,10 @@ private:
     int port_;
     int create_socket_;
     int new_socket_;
+
     std::atomic<bool> abortRequested_{false};
+
+    ThreadPool threadPool_;
 
     static Server* instance;
 
