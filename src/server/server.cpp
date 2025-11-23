@@ -19,7 +19,9 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
+#include "protocol_Io.h"
 #include "helpers/readLineFromSocket.h"
+#include "security/blacklist.h"
 
 #define BUF 1024
 #define BACKLOG 5
@@ -156,9 +158,11 @@ void Server::run() {
         std::cout << "Client connected from " << ::inet_ntoa(cliaddress.sin_addr)
                   << ":" << ntohs(cliaddress.sin_port) << "\n";
 
+        std::string clientIP = ::inet_ntoa(cliaddress.sin_addr);
+
         // Handle clients in a thread pool; returns when client disconnects or QUIT is received.
-        threadPool_.enqueue([this, clientSocket]() {
-            clientCommunication(clientSocket);
+        threadPool_.enqueue([this, clientSocket, clientIP]() {
+            clientCommunication(clientSocket, clientIP);
         });
 
     }
@@ -217,10 +221,20 @@ void Server::signalHandler(int sig) noexcept {
  *  - Supported: "SEND" -> delegates to handle_send(); "QUIT"/"quit" -> close session.
  *  - Unknown commands -> responds "ERR\n".
  */
-void Server::clientCommunication(int clientSocket) {
+void Server::clientCommunication(int clientSocket, const std::string& clientIP) {
+    if (is_ip_blocked(clientIP)) {
+        const std::string msg = "ERR blacklisted\n";
+        ::send(clientSocket, msg.c_str(), msg.size(), 0);
+        ::close(clientSocket);
+        return;
+    }
+
     const std::string welcome =
         "Welcome to myserver!\r\nPlease enter your commands...\r\n";
     (void)::send(clientSocket, welcome.c_str(), welcome.size(), 0);
+
+    bool authenticated = false;
+    std::string currentUser;
 
     std::string command;
     for (;;) {
@@ -232,35 +246,48 @@ void Server::clientCommunication(int clientSocket) {
 
         std::cout << "Command: " << command << std::endl;
 
-        if (command == "SEND") {
-            if (!handle_send(clientSocket)) {
+        if (iequal(command, "LOGIN")) {
+            if (!handle_login(clientSocket, clientIP, authenticated, currentUser)) {
+                std::cerr << "Login failed\n";
+            }
+            continue;
+        }
+
+        if (!authenticated && iequal(command, "QUIT")) {
+            const std::string msg = "ERR not authenticated\n";
+            send(clientSocket, msg.c_str(), msg.size(), 0);
+            continue;
+        }
+
+        if (authenticated && iequal(command, "SEND")) {
+            if (!handle_send(clientSocket, currentUser)) {
                 std::cerr << "SEND failed\n";
             }
             continue;
         }
 
-        if (command == "LIST") {
-            if (!handle_list(clientSocket)) {
+        if (iequal(command, "LIST")) {
+            if (!handle_list(clientSocket, currentUser)) {
                 std::cerr << "LIST failed\n";
             }
             continue;
         }
 
-        if (command == "READ") {
-            if (!handle_read(clientSocket)) {
+        if (iequal(command, "READ")) {
+            if (!handle_read(clientSocket, currentUser)) {
                 std::cerr << "READ failed\n";
             }
             continue;
         }
 
-        if (command == "DEL") {
-            if (!handle_del(clientSocket)) {
+        if (iequal(command, "DEL")) {
+            if (!handle_del(clientSocket, currentUser)) {
                 std::cerr << "DEL failed\n";
             }
             continue;
         }
 
-        if (command == "QUIT" || command == "quit") {
+        if (iequal(command , "QUIT")) {
             break;
         }
 

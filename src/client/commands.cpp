@@ -12,6 +12,7 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include "mypw.h"
 
 /**
  * @file commands.cpp
@@ -53,6 +54,50 @@ void read_welcome(int sock) {
     }
 }
 
+// ====== LOGIN ===============================================================
+
+bool cmd_login(int sock)
+{
+    std::string s;
+
+    std::cout << "username: ";
+    std::cout.flush();
+    if (!std::getline(std::cin, s)) {
+        return false;
+    }
+    trim_line(s);
+    if (send_line(sock, s) == -1) {
+        perror("send");
+        return false;
+    }
+
+    std::cout.flush();
+    s = getpass();
+
+    trim_line(s);
+    if (send_line(sock, s) == -1) {
+        perror("send");
+        return false;
+    }
+
+    std::string resp;
+    int r = recv_line(sock, resp);
+    if (r <= 0) {
+        if (r < 0) perror("recv");
+        else std::cerr << "closed\n";
+        return false;
+    }
+
+    std::cout << "<< " << resp << "\n";
+
+    if (!iequal(resp, "OK")) {
+        std::cerr << "<< Login failed\n";
+        return false;
+    }
+
+    return true;
+}
+
 // ====== SEND ================================================================
 
 /**
@@ -67,17 +112,6 @@ void read_welcome(int sock) {
  */
 bool cmd_send(int sock) {
     std::string s;
-
-    std::cout << "sender: ";
-    std::cout.flush();
-    if (!std::getline(std::cin, s)) {
-        return false;
-    }
-    trim_line(s);
-    if (send_line(sock, s) == -1) {
-        perror("send");
-        return false;
-    }
 
     std::cout << "receiver: ";
     std::cout.flush();
@@ -151,20 +185,10 @@ bool cmd_send(int sock) {
  *  - Read N subject lines and print them enumerated.
  */
 bool cmd_list(int sock) {
-    std::string user;
-    std::cout << "user: ";
-    std::cout.flush();
-    if (!std::getline(std::cin, user)) {
-        return false;
-    }
-    trim_line(user);
-    if (send_line(sock, user) == -1) {
-        perror("send");
-        return false;
-    }
 
     std::string countLine;
     int r = recv_line(sock, countLine);
+    std::cout << countLine << "\n";
     if (r <= 0) {
         if (r < 0) {
             perror("recv");
@@ -202,23 +226,15 @@ bool cmd_list(int sock) {
  *  - Expect a status line; if "OK", read remaining bytes (with short waits) and print verbatim.
  */
 bool cmd_read(int sock) {
-    std::string user, id;
-    std::cout << "user: ";
-    std::cout.flush();
-    if (!std::getline(std::cin, user)) {
-        return false;
-    }
-    trim_line(user);
-    if (send_line(sock, user) == -1) {
-        perror("send");
-        return false;
-    }
+
+    std::string id;
 
     std::cout << "id: ";
     std::cout.flush();
     if (!std::getline(std::cin, id)) {
         return false;
     }
+    std::cout << id << "\n";
     trim_line(id);
     if (send_line(sock, id) == -1) {
         perror("send");
@@ -226,6 +242,7 @@ bool cmd_read(int sock) {
     }
 
     std::string status;
+    std::cout << "test" << std::endl;
     int r = recv_line(sock, status);
     if (r <= 0) {
         if (r < 0) {
@@ -277,17 +294,8 @@ bool cmd_read(int sock) {
  *  - Read and print a single status line from server.
  */
 bool cmd_del(int sock) {
-    std::string user, id;
-    std::cout << "user: ";
-    std::cout.flush();
-    if (!std::getline(std::cin, user)) {
-        return false;
-    }
-    trim_line(user);
-    if (send_line(sock, user) == -1) {
-        perror("send");
-        return false;
-    }
+
+    std::string id;
 
     std::cout << "id: ";
     std::cout.flush();

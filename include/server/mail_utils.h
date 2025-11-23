@@ -8,9 +8,10 @@
 
 #include <string>
 
-bool handle_send(int clientSocket);
-bool handle_list(int clientSocket);
-bool handle_read(int clientSocket);
-bool handle_del (int clientSocket);
+bool handle_login(int clientSocket, const std::string &clientIp, bool& authenticated, std::string& currentUser);
+bool handle_send(int clientSocket, std::string username);
+bool handle_list(int clientSocket, const std::string& username);
+bool handle_read(int clientSocket, std::string username);
+bool handle_del (int clientSocket, std::string username);
 
 #endif //TWMAILER_MAIL_UTILS_H

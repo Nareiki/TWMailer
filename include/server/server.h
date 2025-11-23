@@ -34,7 +34,7 @@ private:
     void initSocket();
     void shutdownServer() noexcept;
 
-    static void clientCommunication(int clientSocket);
+    static void clientCommunication(int clientSocket, const std::string& clientIP);
 };
 
 #endif // SERVER_H

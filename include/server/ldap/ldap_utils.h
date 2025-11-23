@@ -7,6 +7,6 @@
 #include <string>
 
 
-bool ldap_authenticate(const std::string&user, const std::string& password);
+bool ldap_authenticate(const std::string&user, std::string&password);
 
 #endif //TW_MAILER_LDAP_UTILS_H

@@ -16,7 +16,51 @@
 #include <unistd.h>
 #include <sys/socket.h>
 
+#include "ldap_utils.h"
+#include "security/blacklist.h"
+
 namespace fs = std::filesystem;
+
+bool handle_login(int clientSocket, const std::string& clientIp, bool& authenticated, std::string& currentUser) {
+    if (is_ip_blocked(clientIp)) {
+        const std::string msg = "ERR blacklisted\n";
+        send(clientSocket, msg.c_str(), msg.size(), 0);
+        return false;
+    }
+
+    std::string username;
+    std::string password;
+
+    if (!readLineFromSocket(clientSocket, username)) {
+        std::cerr << "LOGIN: Login failed\n";
+        send_err_line(clientSocket);
+        return false;
+    }
+
+    if (!readLineFromSocket(clientSocket, password)) {
+        std::cerr << "LOGIN: invalid password\n";
+        send_err_line(clientSocket);
+        return false;
+    }
+
+    if (username.empty() || password.empty()) {
+        std::cerr << "LOGIN: Username or Password is empty \n";
+        send_err_line(clientSocket);
+        return false;
+    }
+
+    if (!ldap_authenticate(username, password)) {
+        register_failed_login(clientIp);
+        send_err_line(clientSocket);
+        return false;
+    }
+
+    authenticated = true;
+    currentUser = username;
+    register_successful_login(clientIp);
+    send_ok_line(clientSocket);
+    return true;
+}
 
 /**
  * @brief Handles the SEND command for a simple mail server.
@@ -35,6 +79,7 @@ namespace fs = std::filesystem;
  *     - Message body (verbatim; newline-separated)
  *
  * @param clientSocket Connected client socket (assumed blocking).
+ * @param username The authenticated Sender of the mail
  * @return true on success (also responds "OK\n"), false on protocol/IO error (responds "ERR\n" where possible).
  *
  * @note This function performs input validation via is_valid_username() and is_valid_subject().
@@ -42,12 +87,12 @@ namespace fs = std::filesystem;
  * @warning No concurrency control on id assignment—two concurrent SENDs to the same inbox may race.
  * @warning Message is stored verbatim; no size limit enforced here—upstream should guard against abuse.
  */
-bool handle_send(int clientSocket) {
+bool handle_send(int clientSocket, std::string username) {
     // ----- Variables -----
-    std::string sender, receiver, subject, line, message;
+    std::string receiver, subject, line, message;
 
     // ----- Read header lines (sender / receiver / subject) -----
-    if (!readLineFromSocket(clientSocket, sender)) { return false; }
+    if (!readLineFromSocket(clientSocket, username)) { return false; }
     if (!readLineFromSocket(clientSocket, receiver)) { return false; }
     if (!readLineFromSocket(clientSocket, subject)) { return false; }
 
@@ -56,8 +101,8 @@ bool handle_send(int clientSocket) {
     std::lock_guard<std::mutex> lock(mtx);
 
     // ----- Validate protocol fields -----
-    if (!is_valid_username(sender)) {
-        std::cerr << "SEND: invalid sender '" << sender << "'\n";
+    if (!is_valid_username(username)) {
+        std::cerr << "SEND: invalid sender '" << username << "'\n";
         send_err_line(clientSocket);
         return false;
     }
@@ -107,7 +152,7 @@ bool handle_send(int clientSocket) {
         return false;
     }
 
-    out << "FROM: " << sender << "\n";
+    out << "FROM: " << username << "\n";
     out << "SUBJECT: " << subject << "\n\n";
     out << message;
     out.close();
@@ -132,26 +177,16 @@ bool handle_send(int clientSocket) {
  * If user unknown or no messages: "0\n"
  *
  * @param clientSocket Connected client socket (assumed blocking).
+ * @param username The authenticated Sender of the mail
  * @return true on success (including the "0\n" case), false if the connection read fails.
  *
  * @note Only filenames with numeric stems "<id>.txt" are considered messages.
  * @warning No concurrency control while scanning; directory may change during iteration.
  */
-bool handle_list(int clientSocket) {
-    // ----- Read username -----
-    std::string username;
-    if (!readLineFromSocket(clientSocket, username)) { return false; }
-
+bool handle_list(int clientSocket, const std::string& username) {
     // ----- Locks the user -----
     std::mutex& mtx = SyncManager::get_user_mutex(username);
     std::lock_guard<std::mutex> lock(mtx);
-
-    // ----- Validate username -----
-    if (!is_valid_username(username)) {
-        const std::string zero = "0\n";
-        (void)::send(clientSocket, zero.c_str(), zero.size(), 0);
-        return true;
-    }
 
     // ----- Resolve inbox path -----
     fs::path inbox = fs::path("mail-spool") / username;
@@ -212,6 +247,8 @@ bool handle_list(int clientSocket) {
         (void)::send(clientSocket, line.c_str(), line.size(), 0);
     }
 
+    send(clientSocket, "OK\n", 3, 0);
+
     return true;
 }
 
@@ -230,14 +267,14 @@ bool handle_list(int clientSocket) {
  *   ERR\n
  *
  * @param clientSocket Connected client socket (assumed blocking).
+ * @param username The authenticated Sender of the mail
  * @return true on success path (including ERR reply), false only if socket read fails upfront.
  *
  * @note Message id is interpreted as the numeric filename stem.
  */
-bool handle_read(int clientSocket) {
+bool handle_read(int clientSocket, std::string username) {
     // ----- Read parameters -----
-    std::string username, idStr;
-    if (!readLineFromSocket(clientSocket, username)) { return false; }
+    std::string idStr;
     if (!readLineFromSocket(clientSocket, idStr))   { return false; }
 
     // ----- Locks the user -----
@@ -299,14 +336,14 @@ bool handle_read(int clientSocket) {
  *   ERR\n
  *
  * @param clientSocket Connected client socket (assumed blocking).
+ * @param username The authenticated Sender of the mail
  * @return true on success path (including ERR reply), false only if socket read fails upfront.
  *
  * @note Deletion uses std::filesystem::remove with error_code and reports ERR on failure.
  */
-bool handle_del(int clientSocket) {
+bool handle_del(int clientSocket, std::string username) {
     // ----- Read parameters -----
-    std::string username, idStr;
-    if (!readLineFromSocket(clientSocket, username)) { return false; }
+    std::string idStr;
     if (!readLineFromSocket(clientSocket, idStr))   { return false; }
 
     // ----- Locks the user -----

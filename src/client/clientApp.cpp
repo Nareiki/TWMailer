@@ -144,7 +144,9 @@ int ClientApp::run() {
             break;
         }
 
-        if (iequal(line, "SEND")) {
+        if (iequal(line, "LOGIN")) {
+            cmd_login(sock_);
+        } else if (iequal(line, "SEND")) {
             if (!cmd_send(sock_)) {
                 return EXIT_FAILURE;
             }

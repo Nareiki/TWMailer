@@ -13,6 +13,8 @@ int main(int argc, char** argv) {
         std::cerr << "Error: Invalid Port number\n";
         return 2;
     }
+    std::cout << host << ":" << port << std::endl;
+    std::cout << port << std::endl;
 
     ClientApp app(host, port);
     return app.run();

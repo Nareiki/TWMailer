@@ -8,6 +8,7 @@
 #pragma once
 #include <string>
 
+bool cmd_login(int sock);
 bool cmd_send(int sock);
 bool cmd_list(int sock);
 bool cmd_read(int sock);
