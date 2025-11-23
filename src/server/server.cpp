@@ -253,13 +253,13 @@ void Server::clientCommunication(int clientSocket, const std::string& clientIP) 
             continue;
         }
 
-        if (!authenticated && iequal(command, "QUIT")) {
+        if (!authenticated && !iequal(command, "QUIT")) {
             const std::string msg = "ERR not authenticated\n";
             send(clientSocket, msg.c_str(), msg.size(), 0);
             continue;
         }
 
-        if (authenticated && iequal(command, "SEND")) {
+        if (iequal(command, "SEND")) {
             if (!handle_send(clientSocket, currentUser)) {
                 std::cerr << "SEND failed\n";
             }
@@ -288,6 +288,7 @@ void Server::clientCommunication(int clientSocket, const std::string& clientIP) 
         }
 
         if (iequal(command , "QUIT")) {
+            std::cout << "Client closed connection from " << clientIP << std::endl;
             break;
         }
 
